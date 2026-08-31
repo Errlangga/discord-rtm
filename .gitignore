@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.log
+ad_store_data.json
+daily_messages_data.json
+testi_data.json
+store_ticket_locks.json
+ticket_activity.json
+midman_feedback.json
+*.tmp
