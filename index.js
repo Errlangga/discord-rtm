@@ -18,7 +18,8 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember]
 });
 
-const baseDir = __dirname;
+const baseDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
+console.log(`[STORAGE] Database directory: ${baseDir}`);
 const ctx = {
   client,
   baseDir,
