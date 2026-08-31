@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const path = require('path');
+const fs = require('fs');
 const config = require('./config');
 const storage = require('./storage');
 const common = require('./services/common');
@@ -18,7 +19,8 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember]
 });
 
-const baseDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
+const RAILWAY_VOLUME_PATH = '/data';
+const baseDir = process.env.DATA_DIR || (fs.existsSync(RAILWAY_VOLUME_PATH) ? RAILWAY_VOLUME_PATH : __dirname);
 console.log(`[STORAGE] Database directory: ${baseDir}`);
 const ctx = {
   client,
