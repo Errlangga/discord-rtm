@@ -1,17 +1,20 @@
 const { REST, Routes, SlashCommandBuilder, MessageFlags } = require('discord.js');
 
+const inFlightDaily = new Set();
+
 async function sendDailyMessage(ctx, slot) {
   const data = ctx.dailyStore[slot];
-  if (!data || (!data.content && !data.image)) return;
+  if (!data || (!data.content && !data.image)) return true;
   try {
     const channel = await ctx.client.channels.fetch(ctx.config.DAILY_CHANNEL_ID).catch(() => null);
-    if (!channel || !channel.isTextBased()) return;
+    if (!channel || !channel.isTextBased()) return false;
     const payload = {};
     if (data.content) payload.content = data.content;
     if (data.image) payload.files = [data.image];
     await channel.send(payload);
     console.log(`[DAILY MESSAGE] ${slot} WIB berhasil dikirim.`);
-  } catch (e) { console.error('[DAILY MESSAGE ERROR]', e); }
+    return true;
+  } catch (e) { console.error('[DAILY MESSAGE ERROR]', e); return false; }
 }
 
 function checkScheduler(ctx) {
@@ -20,8 +23,15 @@ function checkScheduler(ctx) {
   const date = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   if (!['05:00','12:00','20:00'].includes(time)) return;
   if (ctx.lastSentDaily[time] === date) return;
-  ctx.lastSentDaily[time] = date;
-  sendDailyMessage(ctx, time);
+
+  const key = `${date}:${time}`;
+  if (inFlightDaily.has(key)) return;
+  inFlightDaily.add(key);
+
+  sendDailyMessage(ctx, time)
+    .then(success => { if (success) ctx.lastSentDaily[time] = date; })
+    .catch(error => console.error('[DAILY MESSAGE SCHEDULER ERROR]', error))
+    .finally(() => inFlightDaily.delete(key));
 }
 
 async function registerSlashCommands(ctx) {
@@ -61,6 +71,7 @@ module.exports = {
   },
   async onReady(ctx) {
     try { await registerSlashCommands(ctx); } catch (e) { console.error('[SLASH COMMANDS ERROR]', e); }
+    checkScheduler(ctx);
     setInterval(() => checkScheduler(ctx), 15000);
   },
   sendDailyMessage
