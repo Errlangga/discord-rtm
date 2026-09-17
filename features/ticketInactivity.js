@@ -4,6 +4,7 @@ const locks = require('../services/ticketLocks');
 const GENERAL_INACTIVITY_MS = 2 * 24 * 60 * 60 * 1000;
 const MIDMAN_INACTIVITY_MS = 7 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
+const MESSAGE_SCAN_COOLDOWN_MS = 5 * 60 * 1000;
 const closingTickets = new Set();
 
 function isTrackedTicket(ctx, channel) {
@@ -27,6 +28,10 @@ function parseTopic(topic = '') {
   };
 }
 
+function isDiscordCode(error, code) {
+  return String(error?.code || error?.status || '') === String(code);
+}
+
 function ensureRecord(ctx, channel, options = {}) {
   const previous = ctx.ticketActivity[channel.id] || {};
   const midman = options.midman ?? isMidmanTicket(channel);
@@ -42,6 +47,7 @@ function ensureRecord(ctx, channel, options = {}) {
     lastAdminActivityAt: midman
       ? (Number(options.lastAdminActivityAt) || previous.lastAdminActivityAt || channel.createdTimestamp || now)
       : previous.lastAdminActivityAt,
+    lastScannedAt: Number(previous.lastScannedAt) || 0,
     closing: false
   };
 
@@ -116,6 +122,7 @@ async function getLatestAdminMessage(ctx, channel, sinceTimestamp = 0) {
 async function syncTicketActivity(ctx, channel) {
   if (!isTrackedTicket(ctx, channel)) return false;
   const record = ensureRecord(ctx, channel);
+  const previousScan = Number(record.lastScannedAt) || 0;
   let changed = false;
 
   if (isMidmanTicket(channel)) {
@@ -132,6 +139,9 @@ async function syncTicketActivity(ctx, channel) {
     }
   }
 
+  record.lastScannedAt = Date.now();
+  changed = changed || record.lastScannedAt !== previousScan;
+  ctx.ticketActivity[channel.id] = record;
   return changed;
 }
 
@@ -194,8 +204,20 @@ async function checkTickets(ctx) {
   const now = Date.now();
   let changed = false;
 
-  for (const [channelId, stored] of Object.entries(ctx.ticketActivity)) {
-    const channel = await ctx.client.channels.fetch(channelId).catch(() => null);
+  for (const [channelId] of Object.entries(ctx.ticketActivity)) {
+    let channel;
+    try {
+      channel = await ctx.client.channels.fetch(channelId);
+    } catch (error) {
+      if (isDiscordCode(error, 10003)) {
+        delete ctx.ticketActivity[channelId];
+        changed = true;
+      } else {
+        console.error(`[TICKET INACTIVITY] Tidak dapat memastikan channel ${channelId}; record dipertahankan:`, error?.message || error);
+      }
+      continue;
+    }
+
     if (!channel || !isTrackedTicket(ctx, channel)) {
       delete ctx.ticketActivity[channelId];
       changed = true;
@@ -208,8 +230,9 @@ async function checkTickets(ctx) {
     const midman = isMidmanTicket(channel);
     const limit = midman ? MIDMAN_INACTIVITY_MS : GENERAL_INACTIVITY_MS;
     const last = midman ? Number(current.lastAdminActivityAt) : Number(current.lastActivityAt);
+    const lastScan = Number(current.lastScannedAt) || 0;
 
-    if (!last || now - last >= limit - 10 * 60 * 1000) {
+    if (!last || (now - last >= limit - 10 * 60 * 1000 && now - lastScan >= MESSAGE_SCAN_COOLDOWN_MS)) {
       changed = (await syncTicketActivity(ctx, channel)) || changed;
     }
 
