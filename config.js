@@ -23,5 +23,8 @@ module.exports = {
   MIDMAN_INACTIVITY_HOURS: 7,
   STORAGE_FILE: 'ad_store_data.json',
   DAILY_STORAGE_FILE: 'daily_messages_data.json',
-  TESTI_STORAGE_FILE: 'testi_data.json'
+  TESTI_STORAGE_FILE: 'testi_data.json',
+  DATABASE_BACKUP_CHANNEL_ID: '',
+  DATABASE_BACKUP_TIME_WIB: '03:00',
+  DATABASE_BACKUP_CONFIG_FILE: 'database_backup_config.json'
 };
