@@ -6,6 +6,10 @@ function getChannelId(value) {
   return typeof value === 'string' ? value : value?.channelId || null;
 }
 
+function isDiscordCode(error, code) {
+  return String(error?.code || error?.status || '') === String(code);
+}
+
 function hasActiveTicket(ctx, sourceMessageId, userId) {
   return Boolean(getChannelId(ctx.storeTicketLocks[lockKey(sourceMessageId, userId)]));
 }
@@ -41,14 +45,24 @@ async function cleanupMissingTickets(ctx) {
   let changed = false;
   for (const [key, value] of Object.entries(ctx.storeTicketLocks)) {
     const channelId = getChannelId(value);
-    const channel = channelId
-      ? await ctx.client.channels.fetch(channelId).catch(() => null)
-      : null;
-    if (!channel) {
+    if (!channelId) {
       delete ctx.storeTicketLocks[key];
       changed = true;
+      continue;
+    }
+
+    try {
+      await ctx.client.channels.fetch(channelId);
+    } catch (error) {
+      if (isDiscordCode(error, 10003)) {
+        delete ctx.storeTicketLocks[key];
+        changed = true;
+      } else {
+        console.error(`[TICKET LOCKS] Tidak dapat memastikan channel ${channelId}; lock dipertahankan:`, error?.message || error);
+      }
     }
   }
+
   if (changed) ctx.saveStoreTicketLocks();
 }
 
