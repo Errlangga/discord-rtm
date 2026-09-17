@@ -78,8 +78,8 @@ function getTodayKeyWIB(date = new Date()) {
   return `${p.year}-${p.month}-${p.day}`;
 }
 
-function getBackupFooterKey(dateKey) {
-  return `DB-BACKUP:${dateKey}`;
+function getBackupFooterKey(dateKey, part, totalParts) {
+  return `DB-BACKUP:${dateKey}:${part}/${totalParts}`;
 }
 
 function parseBackupTime(value) {
@@ -135,13 +135,19 @@ function prepareAttachment(entry) {
 }
 
 async function findExistingBackupForDate(channel, clientUserId, dateKey) {
-  const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
-  if (!messages) return false;
-  const footerKey = getBackupFooterKey(dateKey);
-  return messages.some(message =>
-    message.author?.id === clientUserId &&
-    message.embeds?.some(embed => embed.footer?.text === footerKey)
-  );
+  const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+  if (!messages) return null;
+
+  const prefix = `DB-BACKUP:${dateKey}:`;
+  const found = new Set();
+  for (const message of messages.values()) {
+    if (message.author?.id !== clientUserId) continue;
+    for (const embed of message.embeds || []) {
+      const footer = String(embed.footer?.text || '');
+      if (footer.startsWith(prefix)) found.add(footer.slice(prefix.length));
+    }
+  }
+  return found;
 }
 
 function buildBackupEmbed(dateKey, files, skippedFiles, part, totalParts) {
@@ -160,7 +166,7 @@ function buildBackupEmbed(dateKey, files, skippedFiles, part, totalParts) {
     .setDescription(description)
     .addFields({ name: 'Ukuran Aman Per File', value: '19 MiB', inline: true })
     .setTimestamp()
-    .setFooter({ text: getBackupFooterKey(dateKey) });
+    .setFooter({ text: getBackupFooterKey(dateKey, part, totalParts) });
 
   if (skipped) {
     embed.addFields({
@@ -193,29 +199,36 @@ async function performBackup(ctx, dateKey = getTodayKeyWIB()) {
     }
   }
 
-  if (await findExistingBackupForDate(channel, ctx.client.user.id, dateKey)) {
-    console.log(`[DATABASE BACKUP] Backup ${dateKey} sudah ada, dilewati.`);
-    return true;
-  }
-
   const entries = listDatabaseFiles(ctx.baseDir);
-  if (!entries.length) {
-    await channel.send({ embeds: [buildBackupEmbed(dateKey, [], [], 1, 1)] });
-    return true;
-  }
-
   const prepared = entries.map(prepareAttachment);
   const attachments = prepared.filter(item => !item.skipped);
   const skippedFiles = prepared.filter(item => item.skipped);
   const totalParts = Math.max(1, Math.ceil(attachments.length / MAX_ATTACHMENTS_PER_MESSAGE));
+  const existingParts = await findExistingBackupForDate(channel, ctx.client.user.id, dateKey);
+
+  if (existingParts) {
+    const missingParts = [];
+    for (let part = 1; part <= totalParts; part++) {
+      if (!existingParts.has(`${part}/${totalParts}`)) missingParts.push(part);
+    }
+    if (!missingParts.length) {
+      console.log(`[DATABASE BACKUP] Backup ${dateKey} sudah lengkap, dilewati.`);
+      return true;
+    }
+  }
 
   if (!attachments.length) {
-    await channel.send({ embeds: [buildBackupEmbed(dateKey, [], skippedFiles, 1, 1)] });
+    if (!existingParts?.has('1/1')) {
+      await channel.send({ embeds: [buildBackupEmbed(dateKey, [], skippedFiles, 1, 1)] });
+    }
     return true;
   }
 
   for (let index = 0; index < attachments.length; index += MAX_ATTACHMENTS_PER_MESSAGE) {
     const part = Math.floor(index / MAX_ATTACHMENTS_PER_MESSAGE) + 1;
+    const footerPart = `${part}/${totalParts}`;
+    if (existingParts?.has(footerPart)) continue;
+
     const chunk = attachments.slice(index, index + MAX_ATTACHMENTS_PER_MESSAGE);
     await channel.send({
       embeds: [buildBackupEmbed(dateKey, chunk, skippedFiles, part, totalParts)],
