@@ -7,4 +7,5 @@ testi_data.json
 store_ticket_locks.json
 ticket_activity.json
 midman_feedback.json
+database_backup_config.json
 *.tmp
