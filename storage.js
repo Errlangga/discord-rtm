@@ -15,6 +15,7 @@ function safeReadJson(file, fallback) {
 function safeWriteJson(file, data) {
   const tempFile = `${file}.tmp`;
   try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf8');
     fs.renameSync(tempFile, file);
     return true;
