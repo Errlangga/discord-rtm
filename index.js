@@ -1,6 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
-const path = require('path');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const fs = require('fs');
 const config = require('./config');
 const storage = require('./storage');
@@ -34,6 +33,7 @@ const ctx = {
   storeTicketLocks: storage.loadStoreTicketLocks(baseDir),
   ticketActivity: storage.loadTicketActivity(baseDir),
   lastSentDaily: {},
+  databaseBackupLastRunDate: null,
   saveMessageStore: () => storage.saveMessageStore(baseDir, ctx.messageStore),
   saveDailyStore: () => storage.saveDailyStore(baseDir, ctx.dailyStore),
   saveTestiStore: () => storage.saveTestiStore(baseDir, ctx.testiStore),
@@ -48,6 +48,7 @@ const features = [
   require('./features/adminStatus'),
   require('./features/dailyMessage'),
   require('./features/uptime'),
+  require('./features/databaseBackup'),
   require('./features/storeMessages'),
   require('./features/storeInteractions'),
   require('./features/adminSelling'),
@@ -69,7 +70,10 @@ client.once('clientReady', async () => {
 });
 
 process.on('unhandledRejection', error => console.error('[UNHANDLED REJECTION]', error));
-process.on('uncaughtException', error => console.error('[UNCAUGHT EXCEPTION]', error));
+process.on('uncaughtException', error => {
+  console.error('[UNCAUGHT EXCEPTION]', error);
+  process.exit(1);
+});
 
 const token = process.env.DISCORD_BOT_TOKEN;
 if (!token) {
@@ -77,4 +81,7 @@ if (!token) {
   process.exit(1);
 }
 
-client.login(token);
+client.login(token).catch(error => {
+  console.error('[DISCORD LOGIN ERROR]', error);
+  process.exit(1);
+});
